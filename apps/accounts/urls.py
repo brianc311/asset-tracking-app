@@ -1,6 +1,6 @@
 from django.urls import path
 
-from apps.accounts import security_views, views
+from apps.accounts import security_views, transfer_views, views
 from apps.accounts.network_test import network_ping
 
 app_name = "accounts"
@@ -12,6 +12,8 @@ urlpatterns = [
     path("security/", security_views.security_logs, name="security_logs"),
     path("security/block/", security_views.block_ip, name="block_ip"),
     path("security/unblock/<int:pk>/", security_views.unblock_ip, name="unblock_ip"),
+    path("data/export/", transfer_views.export_data, name="export_data"),
+    path("data/import/", transfer_views.import_data, name="import_data"),
     path("", views.dashboard, name="dashboard"),
     path("api/theme/", views.set_theme, name="set_theme"),
 ]

@@ -4,6 +4,8 @@
 <h1 class="page-title">White-Label Branding</h1>
 <p class="page-subtitle">Customize logo, colors, headers, footers, and page titles across the entire site</p>
 
+{% include "includes/data_transfer.html" %}
+
 <div class="card" style="max-width:800px">
   <form method="post" enctype="multipart/form-data">
     {% csrf_token %}

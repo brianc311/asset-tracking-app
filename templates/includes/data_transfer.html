@@ -1,0 +1,17 @@
+<div class="card" style="margin-bottom:1.5rem">
+  <h2 style="margin-top:0">Export and import</h2>
+  <p class="page-subtitle" style="margin-top:0">
+    Download this copy's assets and photos, then import that file on another desktop copy.
+    Assets already on the destination are left unchanged.
+  </p>
+  <div class="toolbar">
+    <a href="{% url 'accounts:export_data' %}" class="btn btn-secondary">Export data</a>
+  </div>
+  <form method="post" action="{% url 'accounts:import_data' %}" enctype="multipart/form-data" style="margin-top:1rem">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.path }}">
+    <label class="form-label" for="import-file">Import file</label>
+    <input id="import-file" type="file" name="import_file" accept=".zip,application/zip" class="form-input" required>
+    <button type="submit" class="btn btn-primary" style="margin-top:1rem">Import data</button>
+  </form>
+</div>
