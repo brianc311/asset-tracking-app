@@ -26,6 +26,8 @@
   <div class="toolbar">
     <button type="button" class="btn btn-primary" id="continuous-scan-start">Scan</button>
     <button type="button" class="btn btn-secondary" id="continuous-scan-clear">Clear</button>
+    <a class="btn btn-secondary" href="{% url 'scan:batch_continuous_export' %}?format=csv">Download CSV</a>
+    <a class="btn btn-secondary" href="{% url 'scan:batch_continuous_export' %}?format=xlsx">Download Excel</a>
   </div>
   <form id="continuous-finish-form" method="post" action="{% url 'scan:batch_continuous_finish' %}" {% if not continuous_open %}hidden{% endif %} style="margin-top:1rem">
     {% csrf_token %}

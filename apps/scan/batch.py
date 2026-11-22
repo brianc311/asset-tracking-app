@@ -4,6 +4,7 @@ from functools import wraps
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
+from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -20,6 +21,7 @@ from apps.scan.continuous import (
     prepare_rows,
     split_duplicates,
 )
+from apps.scan.spreadsheet import continuous_export_rows, render_csv, render_xlsx
 from apps.scan.forms import BatchItemForm, StartBatchForm
 from apps.scan.label_fields import (
     LABEL_FIELD_KEYS,
@@ -313,6 +315,35 @@ def batch_continuous_finish(request):
     if problems and not saved_ids:
         return _render_batch_home(request, key, meta, site, product, form, continuous=restore)
     return redirect("scan:batch_home")
+
+
+def _ordered_session_assets(request, key):
+    ids = list(request.session.get(key, []))
+    found = {
+        asset.pk: asset
+        for asset in Asset.objects.filter(pk__in=ids, is_archived=False)
+    }
+    return [found[pk] for pk in ids if pk in found]
+
+
+@login_required
+@asset_manager_required
+def batch_continuous_export(request):
+    key, _meta, site, _product = require_active_batch(request)
+    if not site:
+        return redirect("scan:batch_start")
+    export_format = (request.GET.get("format") or "csv").strip().lower()
+    rows = continuous_export_rows(_ordered_session_assets(request, key))
+    if export_format == "xlsx":
+        response = HttpResponse(
+            render_xlsx(rows),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = 'attachment; filename="continuous-batch.xlsx"'
+        return response
+    response = HttpResponse(render_csv(rows), content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = 'attachment; filename="continuous-batch.csv"'
+    return response
 
 
 @login_required

@@ -1,4 +1,7 @@
+import csv
+import io
 import json
+import zipfile
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
@@ -124,3 +127,33 @@ class ContinuousScanTests(TestCase):
         self.assertContains(response, "Saved 1 assets.")
         self.assertContains(response, "Row 2: not-a-mac is not a valid MAC address.")
         self.assertTrue(Asset.objects.filter(mac_address="AA:BB:CC:DD:EE:41").exists())
+
+    def test_page_offers_csv_and_excel_downloads(self):
+        response = self.client.get("/scan/batch/")
+        self.assertContains(response, "Download CSV")
+        self.assertContains(response, "Download Excel")
+        self.assertContains(response, "/scan/batch/continuous/export/?format=csv")
+        self.assertContains(response, "/scan/batch/continuous/export/?format=xlsx")
+
+    def test_csv_and_excel_include_saved_scan_rows(self):
+        self._finish(
+            [{"mac": "AA:BB:CC:DD:EE:51"}],
+            device_name="Front door",
+            location="Closet",
+            comments="Checked in",
+        )
+        csv_response = self.client.get("/scan/batch/continuous/export/?format=csv")
+        self.assertEqual(csv_response["Content-Disposition"], 'attachment; filename="continuous-batch.csv"')
+        rows = list(csv.reader(io.StringIO(csv_response.content.decode("utf-8-sig"))))
+        self.assertEqual(rows[0][0], "Row")
+        self.assertEqual(rows[1][6], "AA:BB:CC:DD:EE:51")
+        self.assertIn("Front door", rows[1])
+        self.assertIn("Closet", rows[1])
+        self.assertIn("Checked in", rows[1])
+
+        excel_response = self.client.get("/scan/batch/continuous/export/?format=xlsx")
+        self.assertEqual(excel_response["Content-Disposition"], 'attachment; filename="continuous-batch.xlsx"')
+        with zipfile.ZipFile(io.BytesIO(excel_response.content)) as workbook:
+            sheet = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        self.assertIn("AA:BB:CC:DD:EE:51", sheet)
+        self.assertIn("Front door", sheet)

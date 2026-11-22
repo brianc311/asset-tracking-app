@@ -11,6 +11,7 @@ urlpatterns = [
     path("batch/start/", batch.batch_start, name="batch_start"),
     path("batch/save/", batch.batch_save, name="batch_save"),
     path("batch/continuous/", batch.batch_continuous_finish, name="batch_continuous_finish"),
+    path("batch/continuous/export/", batch.batch_continuous_export, name="batch_continuous_export"),
     path("batch/archive/", batch.batch_archive, name="batch_archive"),
     path("batch/end/", batch.batch_end, name="batch_end"),
     path("batch/report/", batch.batch_report, name="batch_report"),
