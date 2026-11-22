@@ -1,6 +1,7 @@
 import uuid
 from functools import wraps
 
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.shortcuts import redirect, render
@@ -12,6 +13,13 @@ from apps.assets.barcode_utils import barcode_data_uri, batch_report_pdf_respons
 from apps.assets.models import Asset
 from apps.assets.product_types import get_known_product_names
 from apps.assets.site_names import get_known_site_names
+from apps.scan.continuous import (
+    ContinuousScanError,
+    normalize_continuous_mode,
+    parse_continuous_rows,
+    prepare_rows,
+    split_duplicates,
+)
 from apps.scan.forms import BatchItemForm, StartBatchForm
 from apps.scan.label_fields import (
     LABEL_FIELD_KEYS,
@@ -88,13 +96,14 @@ def _batch_form(meta, data=None):
     return BatchItemForm(initial=initial)
 
 
-def _render_batch_home(request, key, meta, site, product, form, status=200):
+def _render_batch_home(request, key, meta, site, product, form, status=200, continuous=None):
     started = meta.get("started_at")
     started_display = ""
     if started:
         parsed = parse_datetime(started)
         if parsed:
             started_display = timezone.localtime(parsed).strftime("%b %d, %Y %I:%M %p")
+    continuous = continuous or {}
     return render(
         request,
         "scan/batch_home.html",
@@ -105,6 +114,14 @@ def _render_batch_home(request, key, meta, site, product, form, status=200):
             "product_name": product,
             "started_at_display": started_display,
             "batch_mode": normalize_batch_mode(meta.get("mode")),
+            "continuous_open": bool(continuous.get("open")),
+            "continuous_rows": continuous.get("rows") or "",
+            "continuous_mode": continuous.get("mode") or "mac",
+            "continuous_device_name": continuous.get("device_name") or "",
+            "continuous_location": continuous.get("location") or "",
+            "continuous_comments": continuous.get("comments") or "",
+            "continuous_shared_serial": continuous.get("shared_serial") or "",
+            "continuous_shared_mac": continuous.get("shared_mac") or "",
         },
         status=status,
     )
@@ -213,6 +230,89 @@ def batch_save(request):
             return redirect("scan:batch_home")
 
     return _render_batch_home(request, key, meta, site, product, form, status=200)
+
+
+def _continuous_problem_text(exc: ValidationError) -> str:
+    if getattr(exc, "messages", None):
+        return " ".join(str(message) for message in exc.messages)
+    return "This row could not be saved."
+
+
+@login_required
+@asset_manager_required
+@require_POST
+def batch_continuous_finish(request):
+    key, meta, site, product = require_active_batch(request)
+    if not site:
+        return redirect("scan:batch_start")
+
+    mode = normalize_continuous_mode(request.POST.get("continuous_mode"))
+    device_name = (request.POST.get("device_name") or "").strip()
+    location = (request.POST.get("location") or "").strip()
+    comments = (request.POST.get("comments") or "").strip()
+    raw_rows = request.POST.get("continuous_rows") or ""
+    restore = {
+        "open": True,
+        "rows": raw_rows,
+        "mode": mode,
+        "device_name": device_name,
+        "location": location,
+        "comments": comments,
+        "shared_serial": request.POST.get("shared_serial") or "",
+        "shared_mac": request.POST.get("shared_mac") or "",
+    }
+    form = _batch_form(meta)
+    if len(device_name) > 128 or len(location) > 255:
+        messages.error(request, "Device name or location is too long.")
+        return _render_batch_home(request, key, meta, site, product, form, continuous=restore)
+
+    try:
+        parsed = parse_continuous_rows(raw_rows)
+        prepared, problems = prepare_rows(
+            mode,
+            parsed,
+            shared_serial=request.POST.get("shared_serial") or "",
+            shared_mac=request.POST.get("shared_mac") or "",
+        )
+    except ContinuousScanError as exc:
+        messages.error(request, str(exc))
+        return _render_batch_home(request, key, meta, site, product, form, continuous=restore)
+
+    kept, duplicate_problems = split_duplicates(prepared)
+    problems.extend(duplicate_problems)
+    saved_ids = []
+    for row in kept:
+        asset = Asset(
+            site_name=site,
+            product_name=product,
+            serial_number=row["serial"],
+            mac_address=row["mac"],
+            device_name=device_name,
+            location=location,
+            comments=comments,
+            barcode_value=Asset.generate_barcode_value(),
+            created_by=request.user,
+            updated_by=request.user,
+        )
+        try:
+            asset.full_clean()
+            asset.save()
+        except ValidationError as exc:
+            problems.append(f"Row {row['number']}: {_continuous_problem_text(exc)}")
+            continue
+        saved_ids.append(asset.pk)
+
+    if saved_ids:
+        ids = list(request.session.get(key, []))
+        ids.extend(saved_ids)
+        request.session[key] = ids
+        request.session.modified = True
+        messages.success(request, f"Saved {len(saved_ids)} assets.")
+    for problem in problems:
+        messages.error(request, problem)
+    if problems and not saved_ids:
+        return _render_batch_home(request, key, meta, site, product, form, continuous=restore)
+    return redirect("scan:batch_home")
 
 
 @login_required

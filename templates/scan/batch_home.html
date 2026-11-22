@@ -12,6 +12,51 @@
   {% if started_at_display %}— Started {{ started_at_display }}{% endif %}
 </p>
 
+<div class="card" id="continuous-scan-card" style="max-width:640px">
+  <h2 style="margin-top:0">Continuous scan</h2>
+  <p class="page-subtitle" style="margin-top:0">
+    The camera stays on while you scan every MAC, every serial, or a serial and then its MAC.
+    Press Done, fill the shared fields once, then Finish.
+  </p>
+  <div class="toolbar" style="margin-bottom:1rem">
+    <button type="button" class="btn btn-primary" data-continuous-mode="mac" aria-pressed="true">MAC addresses</button>
+    <button type="button" class="btn btn-secondary" data-continuous-mode="serial" aria-pressed="false">Serial numbers</button>
+    <button type="button" class="btn btn-secondary" data-continuous-mode="pair" aria-pressed="false">Serial then MAC</button>
+  </div>
+  <div class="toolbar">
+    <button type="button" class="btn btn-primary" id="continuous-scan-start">Scan</button>
+    <button type="button" class="btn btn-secondary" id="continuous-scan-clear">Clear</button>
+  </div>
+  <form id="continuous-finish-form" method="post" action="{% url 'scan:batch_continuous_finish' %}" {% if not continuous_open %}hidden{% endif %} style="margin-top:1rem">
+    {% csrf_token %}
+    <input type="hidden" name="continuous_mode" id="continuous-mode" value="{{ continuous_mode|default:'mac' }}">
+    <textarea name="continuous_rows" id="continuous-rows" hidden>{{ continuous_rows }}</textarea>
+    <h3 style="margin-bottom:0.5rem">Scanned rows</h3>
+    <ol id="continuous-preview" style="margin-top:0"></ol>
+    <div class="field-row">
+      <label class="form-label" for="continuous-device-name">Device name</label>
+      <input id="continuous-device-name" name="device_name" class="form-input" maxlength="128" value="{{ continuous_device_name }}">
+    </div>
+    <div class="field-row" id="continuous-shared-serial">
+      <label class="form-label" for="continuous-serial">Serial number</label>
+      <input id="continuous-serial" name="shared_serial" class="form-input" maxlength="128" value="{{ continuous_shared_serial }}" placeholder="Optional. Same serial on every row.">
+    </div>
+    <div class="field-row" id="continuous-shared-mac" hidden>
+      <label class="form-label" for="continuous-mac">MAC address</label>
+      <input id="continuous-mac" name="shared_mac" class="form-input" maxlength="32" value="{{ continuous_shared_mac }}" placeholder="Optional. Same MAC on every row.">
+    </div>
+    <div class="field-row">
+      <label class="form-label" for="continuous-location">Location</label>
+      <input id="continuous-location" name="location" class="form-input" maxlength="255" value="{{ continuous_location }}">
+    </div>
+    <div class="field-row">
+      <label class="form-label" for="continuous-comments">Comment</label>
+      <textarea id="continuous-comments" name="comments" class="form-input" rows="2">{{ continuous_comments }}</textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">Finish</button>
+  </form>
+</div>
+
 <div class="card" style="max-width:640px">
   <div class="toolbar" style="margin-bottom:1rem">
     <a href="{% url 'scan:batch_home' %}?mode=quick" class="btn {% if batch_mode != 'full' %}btn-primary{% else %}btn-secondary{% endif %}">Quick</a>
@@ -124,6 +169,7 @@
 {% block extra_js %}
 <script src="{% static 'js/field-scanner.js' %}"></script>
 <script src="{% static 'js/batch-scan.js' %}"></script>
+<script src="{% static 'js/continuous-scan.js' %}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   initBulkSelect('batch-items-table', 'batch-archive-form');
