@@ -28,6 +28,85 @@ CA_KEY = CERT_DIR / "dev-ca-key.pem"
 SERVER_CERT = CERT_DIR / "dev.pem"
 SERVER_KEY = CERT_DIR / "dev-key.pem"
 CA_NAME = "Asset Tracking Desktop CA"
+_VIRTUAL_ADAPTER_MARKERS = (
+    "vethernet",
+    "hyper-v",
+    "wsl",
+    "virtualbox",
+    "vmware",
+    "bluetooth",
+    "loopback",
+    "tunnel",
+    "vpn",
+    "tailscale",
+    "zerotier",
+    "docker",
+)
+
+
+def _is_usable_ipv4(ip: str) -> bool:
+    if not ip or ip.startswith("127.") or ip.startswith("169."):
+        return False
+    try:
+        return isinstance(ipaddress.ip_address(ip), ipaddress.IPv4Address)
+    except ValueError:
+        return False
+
+
+def _default_route_ipv4() -> str | None:
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            probe.connect(("8.8.8.8", 80))
+            ip = probe.getsockname()[0]
+        finally:
+            probe.close()
+    except OSError:
+        return None
+    return ip if _is_usable_ipv4(ip) else None
+
+
+def _adapter_is_virtual(name: str) -> bool:
+    folded = name.casefold()
+    return any(marker in folded for marker in _VIRTUAL_ADAPTER_MARKERS)
+
+
+def _ipv4_by_adapter_from_ipconfig(text: str) -> list[tuple[str, str]]:
+    current = ""
+    found: list[tuple[str, str]] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        folded = line.casefold()
+        if folded.endswith(":") and "adapter" in folded:
+            current = line[:-1].split(" adapter ", 1)[-1].strip()
+            continue
+        if "IPv4" in line and ":" in line:
+            ip = line.rsplit(":", 1)[-1].strip().split("%", 1)[0]
+            if current and _is_usable_ipv4(ip):
+                found.append((current, ip))
+    return found
+
+
+def _virtual_ipv4_addresses() -> set[str]:
+    if os.name != "nt":
+        return set()
+    try:
+        result = subprocess.run(
+            ["ipconfig"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return set()
+    return {
+        ip
+        for name, ip in _ipv4_by_adapter_from_ipconfig(result.stdout or "")
+        if _adapter_is_virtual(name)
+    }
 
 
 def lan_ipv4_addresses() -> list[str]:
@@ -37,18 +116,18 @@ def lan_ipv4_addresses() -> list[str]:
         hosts.update(
             info[4][0]
             for info in socket.getaddrinfo(hostname, None, socket.AF_INET)
-            if info[4][0] and not info[4][0].startswith("127.")
+            if info[4][0]
         )
     except OSError:
         pass
-    try:
-        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        probe.connect(("8.8.8.8", 80))
-        hosts.add(probe.getsockname()[0])
-        probe.close()
-    except OSError:
-        pass
-    return sorted(ip for ip in hosts if not ip.startswith("169."))
+    primary = _default_route_ipv4()
+    if primary:
+        hosts.add(primary)
+    virtual = _virtual_ipv4_addresses()
+    usable = [ip for ip in hosts if _is_usable_ipv4(ip) and ip not in virtual]
+    if primary and primary in usable:
+        return [primary, *sorted(ip for ip in usable if ip != primary)]
+    return sorted(usable)
 
 
 def _load_or_create_ca() -> tuple[x509.Certificate, rsa.RSAPrivateKey]:

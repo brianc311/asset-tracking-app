@@ -13,7 +13,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-for /f "tokens=*" %%i in ('powershell -NoProfile -Command "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch 'Loopback' -and $_.IPAddress -notmatch '^169\.' } | Select-Object -First 1 -ExpandProperty IPAddress)"') do set LAPTOP_IP=%%i
+for /f "tokens=*" %%i in ('powershell -NoProfile -Command "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch 'Loopback|vEthernet|WSL|Hyper-V|Bluetooth|VirtualBox|VMware' -and $_.IPAddress -notmatch '^169\.' } | Select-Object -First 1 -ExpandProperty IPAddress)"') do set LAPTOP_IP=%%i
 
 echo.
 echo Asset Tracking HTTPS dev server (camera works on phone)
