@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ title }}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; color: #0f172a; }
+    h1 { color: #6366f1; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 1rem; }
+    th, td { border: 1px solid #e2e8f0; padding: 0.5rem; text-align: left; }
+    th { background: #6366f1; color: #fff; }
+    tr:nth-child(even) { background: #f8fafc; }
+    .total { margin-top: 1rem; font-weight: bold; }
+    @media print { .no-print { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="no-print" style="margin-bottom:1rem">
+    <button onclick="window.print()">Print</button>
+    <a href="?{% if request.GET.site %}site={{ request.GET.site|urlencode }}&amp;{% endif %}{% if request.GET.ids %}ids={{ request.GET.ids }}&amp;{% endif %}{% if request.GET.session %}session={{ request.GET.session }}&amp;{% endif %}{% if cols_query %}cols={{ cols_query }}&amp;{% endif %}export=pdf">Download PDF</a>
+  </div>
+  <h1>{{ title }}</h1>
+  <p>Generated {% now "M j, Y g:i A" %}</p>
+  <form method="get" class="no-print" style="margin:1rem 0">
+    {% if request.GET.site %}<input type="hidden" name="site" value="{{ request.GET.site }}">{% endif %}
+    {% if request.GET.ids %}<input type="hidden" name="ids" value="{{ request.GET.ids }}">{% endif %}
+    {% if request.GET.session %}<input type="hidden" name="session" value="{{ request.GET.session }}">{% endif %}
+    <input type="hidden" name="cols" value="{{ cols_query }}">
+    <p style="margin:0 0 0.5rem"><strong>Columns</strong></p>
+    {% for col in report_columns %}
+    <label style="margin-right:0.75rem">
+      <input type="checkbox" name="col" value="{{ col.key }}" {% if col.selected %}checked{% endif %}>
+      {{ col.label }}
+    </label>
+    {% endfor %}
+    <noscript><button type="submit">Apply</button></noscript>
+  </form>
+  <table>
+    <thead>
+      <tr>
+        {% for header in visible_headers %}<th>{{ header }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for asset in assets %}
+      <tr>
+        {% for key in visible_keys %}
+        <td>{% include "assets/_report_cell.html" %}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="total">Total items: {{ total }}</p>
+  <script>
+  document.querySelectorAll('input[name=col]').forEach(box => {
+    box.addEventListener('change', () => {
+      const form = box.form;
+      const keys = Array.from(form.querySelectorAll('input[name=col]:checked')).map(el => el.value);
+      const params = new URLSearchParams(new FormData(form));
+      params.delete('col');
+      params.set('cols', keys.join(','));
+      window.location.search = params.toString();
+    });
+  });
+  </script>
+</body>
+</html>

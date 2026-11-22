@@ -1,0 +1,86 @@
+from django.conf import settings
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.views import LoginView, LogoutView
+from django.db.models import Count
+from django.http import JsonResponse
+from django.shortcuts import redirect, render
+from django.urls import reverse_lazy
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import never_cache
+from django.views.decorators.http import require_POST
+
+from apps.accounts.access_log import log_access
+from apps.accounts.forms import RecaptchaAuthenticationForm
+from apps.accounts.models import AccessLog
+from apps.assets.models import Asset
+
+
+@method_decorator(never_cache, name="dispatch")
+class AppLoginView(LoginView):
+    template_name = "accounts/login.html"
+    form_class = RecaptchaAuthenticationForm
+    redirect_authenticated_user = True
+
+    def get_success_url(self):
+        return reverse_lazy("accounts:dashboard")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        key = settings.RECAPTCHA_PUBLIC_KEY or ""
+        context["recaptcha_key_prefix"] = key[:12]
+        context["recaptcha_is_test_key"] = key.startswith("6LeIxAcT")
+        return context
+
+    def form_valid(self, form):
+        log_access(self.request, AccessLog.EventType.LOGIN_SUCCESS, username=form.get_user().username)
+        return super().form_valid(form)
+
+    def form_invalid(self, form):
+        username = form.data.get("username", "")
+        log_access(self.request, AccessLog.EventType.LOGIN_FAILED, username=username)
+        return super().form_invalid(form)
+
+
+class AppLogoutView(LogoutView):
+    http_method_names = ["get", "post", "head", "options"]
+    template_name = "accounts/logout_confirm.html"
+    next_page = reverse_lazy("accounts:login")
+
+    def get(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect(self.next_page)
+        return super().get(request, *args, **kwargs)
+
+
+@login_required
+def dashboard(request):
+    assets = Asset.objects.filter(is_archived=False)
+    site_stats = []
+    for row in assets.values("site_name").annotate(count=Count("id")).order_by("site_name"):
+        name = (row["site_name"] or "").strip()
+        site_stats.append(
+            {
+                "name": name or "Unassigned",
+                "count": row["count"],
+                "is_unassigned": not name,
+            }
+        )
+    site_stats.sort(key=lambda item: (item["is_unassigned"], item["name"].lower()))
+
+    context = {
+        "total_assets": assets.count(),
+        "recent_assets": assets.order_by("-created_at")[:5],
+        "archived_count": Asset.objects.filter(is_archived=True).count(),
+        "site_stats": site_stats,
+    }
+    return render(request, "accounts/dashboard.html", context)
+
+
+@login_required
+@require_POST
+def set_theme(request):
+    theme = request.POST.get("theme", "system")
+    if theme in ("light", "dark", "system"):
+        request.user.theme_preference = theme
+        request.user.save(update_fields=["theme_preference"])
+    return JsonResponse({"ok": True, "theme": theme})
